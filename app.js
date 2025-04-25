@@ -1,58 +1,57 @@
-// Required libraries
 const express = require('express');
 const mongoose = require('mongoose');
 const app = express();
-const path = require('path');
 const Shipment = require('./models/Shipment'); // Import the Shipment model
+const userRoutes = require('./Routes/userRoutes');
+const trackingRoutes = require('./Routes/trackingRoutes');
 
-// EJS template engine settings
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+// Middleware to parse JSON requests
+app.use(express.json());
+app.use('/', userRoutes); // User routes
+app.use('/api', trackingRoutes);  // Tracking routes
 
-// Middleware
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Connect to the database
-mongoose.connect('mongodb://127.0.0.1:27017/shipmentDB')
+// Connect to MongoDB
+mongoose.connect('mongodb://127.0.0.1:27017/shipmentDB', {
+    useNewUrlParser: true, 
+    useUnifiedTopology: true
+})
     .then(() => console.log('MongoDB Connected'))
     .catch(err => console.log('MongoDB Error', err));
 
-// Main page - display shipments
-app.get('/', async (req, res) => {
+// Main page - API route to get all shipments
+app.get('/api/shipments', async (req, res) => {
     try {
         const shipments = await Shipment.find({});
-        res.render('home', { shipments });
+        res.json({ shipments });  // Send data as JSON
     } catch (err) {
-        res.status(500).send('Error loading shipments');
+        res.status(500).json({ error: 'Error loading shipments' });
     }
 });
 
 // Route to add a new shipment
-app.post('/add-shipment', async (req, res) => {
+app.post('/api/shipments', async (req, res) => {
     const { trackingCode, status } = req.body;
+
+    // Validate input
+    if (!trackingCode || !status) {
+        return res.status(400).json({ error: 'Tracking code and status are required' });
+    }
+
     try {
         const newShipment = new Shipment({ trackingCode, status });
         await newShipment.save();
-        res.redirect('/');
+        res.status(201).json({ message: 'Shipment added successfully' });
     } catch (err) {
-        console.log(err);
-        res.status(500).send('Error adding shipment');
+        res.status(500).json({ error: 'Error adding shipment' });
     }
 });
-
-// Tracking routes
-const trackingRoutes = require('./Routes/trackingRoutes');
-app.use('/', trackingRoutes);
 
 // Adding default data if the database is empty
 app.listen(3000, async () => {
     console.log('Server is running on http://localhost:3000 🚀');
     try {
-        // Check if there are any shipments in the database
         const shipmentsCount = await Shipment.countDocuments();
         if (shipmentsCount === 0) {
-            // Adding more realistic default shipment data
             const newShipments = [
                 { trackingCode: 'ORD123456', status: 'Shipped' },
                 { trackingCode: 'ORD789012', status: 'Delivered' },
@@ -70,5 +69,11 @@ app.listen(3000, async () => {
         }
     } catch (err) {
         console.log('Error adding default shipments:', err);
-    }
+    } 
+});
+
+// Global error handler (for unhandled routes and errors)
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
 });
